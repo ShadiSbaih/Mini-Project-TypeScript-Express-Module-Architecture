@@ -1,17 +1,19 @@
-# Express TypeScript API with Modular Architecture
+# Express TypeScript API with Modular Architecture & File Upload
 
-A complete Express API built with TypeScript featuring modular architecture, JWT authentication, role-based access control, and a generic repository pattern.
+A complete Express API built with TypeScript featuring modular architecture, JWT authentication, role-based access control, file upload capabilities, and a generic repository pattern.
 
 ## 🚀 Features
 
 - **Modular Architecture**: Organized into auth, users, courses, and shared modules
 - **Entity-Based Design**: Separate entity files for each module
 - **JWT Authentication**: Secure authentication with role-based access control
+- **File Upload Support**: Image upload using Multer with local storage
 - **Generic Repository Pattern**: Reusable CRUD operations with TypeScript generics
 - **Role-Based Access**: ADMIN, COACH, and STUDENT roles with different permissions
 - **Zod Validation**: Strong type validation for all DTOs
 - **In-Memory Storage**: Data stored in JavaScript objects (resets on restart)
 - **Error Handling**: Comprehensive error handling with custom error types
+- **Static File Serving**: Direct access to uploaded images
 
 ## 🏗️ Project Structure
 
@@ -41,8 +43,11 @@ src/
 │   │   └── base.entity.ts   # Base entities
 │   ├── middlewares/         # Custom middlewares
 │   ├── utils/              # Utility functions
+│   │   ├── upload.ts       # Multer file upload config
+│   │   └── file.utils.ts   # File management utilities
 │   ├── repository/         # Generic repository
 │   └── errors/            # Error handling
+├── uploads/               # Uploaded images storage
 └── server.ts              # Application entry point
 ```
 
@@ -63,7 +68,7 @@ interface User extends BaseEntity {
 interface Course extends BaseEntity {
   title: string;
   description: string;
-  image?: string;
+  image?: string; // Path to uploaded image file
   creatorId: string;
 }
 ```
@@ -102,11 +107,14 @@ interface BaseEntity {
 - `POST /users/coach` - Create COACH user (ADMIN only)
 
 ### Courses
-- `POST /courses` - Create course (COACH/ADMIN only)
+- `POST /courses` - Create course with optional image upload (COACH/ADMIN only)
 - `GET /courses` - Get all courses (public)
 - `GET /courses/:id` - Get course by ID (public)
-- `PUT /courses/:id` - Update course (creator only)
-- `DELETE /courses/:id` - Delete course (creator only)
+- `PUT /courses/:id` - Update course with optional image upload (creator only)
+- `DELETE /courses/:id` - Delete course and associated image (creator only)
+
+### File Access
+- `GET /uploads/:filename` - Access uploaded image files (public)
 
 ## 🛠️ Setup Instructions
 
@@ -125,9 +133,10 @@ npm install
 Create a `.env` file in the root directory:
 ```env
 PORT=3000
-JWT_SECRET=your-super-secret-jwt-key
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_EXPIRES_IN=7d
 NODE_ENV=development
+SALT_ROUNDS=12
 ```
 
 4. **Run the application**
@@ -273,12 +282,13 @@ curl -X POST http://localhost:3000/users/coach \
 
 ### 📚 Course Management Endpoints
 
-#### 6. Create a course (COACH/ADMIN only)
+#### 6. Create a course with image upload (COACH/ADMIN only)
 ```bash
 curl -X POST http://localhost:3000/courses \
-  -H "Content-Type: application/json" \
   -H "Authorization: Bearer COACH_OR_ADMIN_JWT_TOKEN" \
-  -d '{"title":"JavaScript Basics","description":"Learn JavaScript fundamentals and modern ES6+ features"}'
+  -F "title=JavaScript Basics" \
+  -F "description=Learn JavaScript fundamentals and modern ES6+ features" \
+  -F "image=@/path/to/your/image.jpg"
 ```
 
 **Response (201 Created):**
@@ -290,6 +300,7 @@ curl -X POST http://localhost:3000/courses \
     "id": "770e8400-e29b-41d4-a716-446655440002",
     "title": "JavaScript Basics",
     "description": "Learn JavaScript fundamentals and modern ES6+ features",
+    "image": "/uploads/1693123456789-123456789.jpg",
     "creatorId": "660e8400-e29b-41d4-a716-446655440001",
     "createdAt": "2025-08-27T12:30:00.000Z",
     "updatedAt": "2025-08-27T12:30:00.000Z"
@@ -297,7 +308,15 @@ curl -X POST http://localhost:3000/courses \
 }
 ```
 
-#### 7. Get all courses (Public)
+#### 7. Create a course without image (optional field)
+```bash
+curl -X POST http://localhost:3000/courses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer COACH_OR_ADMIN_JWT_TOKEN" \
+  -d '{"title":"Course without Image","description":"This course has no image field"}'
+```
+
+#### 8. Get all courses (Public)
 ```bash
 curl -X GET http://localhost:3000/courses
 ```
@@ -312,6 +331,7 @@ curl -X GET http://localhost:3000/courses
       "id": "770e8400-e29b-41d4-a716-446655440002",
       "title": "JavaScript Basics",
       "description": "Learn JavaScript fundamentals and modern ES6+ features",
+      "image": "/uploads/1693123456789-123456789.jpg",
       "creatorId": "660e8400-e29b-41d4-a716-446655440001",
       "createdAt": "2025-08-27T12:30:00.000Z",
       "updatedAt": "2025-08-27T12:30:00.000Z"
@@ -328,7 +348,7 @@ curl -X GET http://localhost:3000/courses
 }
 ```
 
-#### 8. Get course by ID (Public)
+#### 9. Get course by ID (Public)
 ```bash
 curl -X GET http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002
 ```
@@ -342,6 +362,7 @@ curl -X GET http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002
     "id": "770e8400-e29b-41d4-a716-446655440002",
     "title": "JavaScript Basics",
     "description": "Learn JavaScript fundamentals and modern ES6+ features",
+    "image": "/uploads/1693123456789-123456789.jpg",
     "creatorId": "660e8400-e29b-41d4-a716-446655440001",
     "createdAt": "2025-08-27T12:30:00.000Z",
     "updatedAt": "2025-08-27T12:30:00.000Z"
@@ -349,12 +370,19 @@ curl -X GET http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002
 }
 ```
 
-#### 9. Update course (Creator or ADMIN only)
+#### 10. Access uploaded image (Public)
+```bash
+curl -X GET http://localhost:3000/uploads/1693123456789-123456789.jpg
+```
+*This will return the actual image file*
+
+#### 11. Update course with image (Creator or ADMIN only)
 ```bash
 curl -X PUT http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002 \
-  -H "Content-Type: application/json" \
   -H "Authorization: Bearer CREATOR_OR_ADMIN_JWT_TOKEN" \
-  -d '{"title":"Advanced JavaScript","description":"Master JavaScript with advanced concepts, async programming, and modern frameworks"}'
+  -F "title=Advanced JavaScript" \
+  -F "description=Master JavaScript with advanced concepts, async programming, and modern frameworks" \
+  -F "image=@/path/to/new/image.jpg"
 ```
 
 **Response (200 OK):**
@@ -366,6 +394,7 @@ curl -X PUT http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002 \
     "id": "770e8400-e29b-41d4-a716-446655440002",
     "title": "Advanced JavaScript",
     "description": "Master JavaScript with advanced concepts, async programming, and modern frameworks",
+    "image": "/uploads/1693123999888-987654321.jpg",
     "creatorId": "660e8400-e29b-41d4-a716-446655440001",
     "createdAt": "2025-08-27T12:30:00.000Z",
     "updatedAt": "2025-08-27T14:15:00.000Z"
@@ -373,7 +402,7 @@ curl -X PUT http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002 \
 }
 ```
 
-#### 10. Delete course (Creator or ADMIN only)
+#### 12. Delete course (Creator or ADMIN only)
 ```bash
 curl -X DELETE http://localhost:3000/courses/770e8400-e29b-41d4-a716-446655440002 \
   -H "Authorization: Bearer CREATOR_OR_ADMIN_JWT_TOKEN"
@@ -386,6 +415,7 @@ curl -X DELETE http://localhost:3000/courses/770e8400-e29b-41d4-a716-44665544000
   "message": "Course deleted successfully"
 }
 ```
+*Note: Associated image file is automatically deleted from server*
 
 ### 🚨 Error Response Examples
 
@@ -441,7 +471,7 @@ curl -X DELETE http://localhost:3000/courses/770e8400-e29b-41d4-a716-44665544000
 
 ### 🔄 Complete Testing Workflow
 
-Here's a step-by-step workflow to test all functionality:
+Here's a step-by-step workflow to test all functionality including file uploads:
 
 #### Step 1: Start the server
 ```bash
@@ -472,12 +502,13 @@ curl -X POST http://localhost:3000/auth/login \
 ```
 *Save the returned JWT token as COACH_TOKEN*
 
-#### Step 5: Create a course (as COACH)
+#### Step 5: Create a course with image (as COACH)
 ```bash
 curl -X POST http://localhost:3000/courses \
-  -H "Content-Type: application/json" \
   -H "Authorization: Bearer COACH_TOKEN" \
-  -d '{"title":"Node.js Masterclass","description":"Complete guide to Node.js backend development"}'
+  -F "title=Node.js Masterclass" \
+  -F "description=Complete guide to Node.js backend development" \
+  -F "image=@/path/to/your/course-image.jpg"
 ```
 *Save the returned course ID as COURSE_ID*
 
@@ -494,7 +525,12 @@ curl -X POST http://localhost:3000/auth/register \
 curl -X GET http://localhost:3000/courses
 ```
 
-#### Step 8: Try to create course (as STUDENT - should fail)
+#### Step 8: Access uploaded image directly
+```bash
+curl -X GET http://localhost:3000/uploads/[IMAGE_FILENAME_FROM_COURSE]
+```
+
+#### Step 9: Try to create course (as STUDENT - should fail)
 ```bash
 curl -X POST http://localhost:3000/courses \
   -H "Content-Type: application/json" \
@@ -503,15 +539,15 @@ curl -X POST http://localhost:3000/courses \
 ```
 *Expected: 403 Forbidden*
 
-#### Step 9: Update course (as COACH owner)
+#### Step 10: Update course with new image (as COACH owner)
 ```bash
 curl -X PUT http://localhost:3000/courses/COURSE_ID \
-  -H "Content-Type: application/json" \
   -H "Authorization: Bearer COACH_TOKEN" \
-  -d '{"title":"Advanced Node.js Masterclass","description":"Complete guide to advanced Node.js backend development patterns"}'
+  -F "title=Advanced Node.js Masterclass" \
+  -F "image=@/path/to/new/image.jpg"
 ```
 
-#### Step 10: Delete course (as ADMIN)
+#### Step 11: Delete course (as ADMIN)
 ```bash
 curl -X DELETE http://localhost:3000/courses/COURSE_ID \
   -H "Authorization: Bearer ADMIN_TOKEN"
@@ -524,8 +560,8 @@ For easier testing, you can import this Postman collection:
 ```json
 {
   "info": {
-    "name": "Express TypeScript API",
-    "description": "Complete API testing collection"
+    "name": "Express TypeScript API with File Upload",
+    "description": "Complete API testing collection with file upload support"
   },
   "auth": {
     "type": "bearer",
@@ -550,6 +586,34 @@ For easier testing, you can import this Postman collection:
 }
 ```
 
+#### File Upload in Postman:
+1. **Method**: POST/PUT
+2. **URL**: `{{baseUrl}}/courses` or `{{baseUrl}}/courses/{{courseId}}`
+3. **Authorization**: Bearer Token
+4. **Body**: form-data
+   - `title` (text): Course title
+   - `description` (text): Course description  
+   - `image` (file): Select image file from your computer
+
+## 📁 File Upload Features
+
+### ✅ **Supported File Types**
+- **Images Only**: JPG, JPEG, PNG, GIF, WebP
+- **File Size Limit**: 5MB maximum
+- **Storage**: Local filesystem in `/uploads` directory
+
+### ✅ **File Management**
+- **Unique Naming**: `timestamp-random.extension` format
+- **Automatic Cleanup**: Files deleted when courses are removed
+- **Direct Access**: `GET /uploads/filename.jpg` for public access
+- **Path Storage**: Image paths stored as `/uploads/filename.jpg` in database
+
+### ✅ **Upload Validation**
+- MIME type checking (images only)
+- File size enforcement (5MB limit)
+- Secure filename generation
+- Error handling for invalid files
+
 ## 🔧 Default Admin User
 
 On server startup, a default admin user is created:
@@ -562,10 +626,11 @@ On server startup, a default admin user is created:
 - **Express.js** - Web framework
 - **TypeScript** - Type safety
 - **JWT** - Authentication
+- **Multer** - File upload middleware
 - **Zod** - Schema validation
 - **bcryptjs** - Password hashing
-- **CORS** - Cross-origin resource sharing
 - **dotenv** - Environment variables
+- **UUID** - Unique identifier generation
 
 ### 🔐 Authentication Flow
 
@@ -589,7 +654,7 @@ On server startup, a default admin user is created:
 - **id**: UUID (auto-generated)
 - **title**: String (min 3 characters)
 - **description**: String (min 10 characters)
-- **image**: String (optional, for future use)
+- **image**: String (optional, path to uploaded image file)
 - **creatorId**: UUID (references User)
 - **createdAt**: Date
 - **updatedAt**: Date
